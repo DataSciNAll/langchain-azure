@@ -14,7 +14,7 @@ from azure.monitor.opentelemetry import configure_azure_monitor
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.tools import StructuredTool, tool
-from langchain_openai import ChatOpenAI
+from langchain_openai import AzureChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import AnyMessage, add_messages
 
@@ -39,14 +39,14 @@ load_dotenv()
 
 
 DESTINATIONS = {
-    "paris": {
-        "country": "France",
-        "currency": "EUR",
-        "airport": "CDG",
+    "Santiago": {
+        "country": "Chile",
+        "currency": "CLP",
+        "airport": "SCL",
         "highlights": [
-            "Eiffel Tower at sunset",
-            "Seine dinner cruise",
-            "Day trip to Versailles",
+            "Valparaiso harbor tour",
+            "Bodega wine tasting",
+            "Boat Trip Vina Del Mar",
         ],
     },
     "tokyo": {
@@ -98,15 +98,15 @@ def _pick_destination(user_request: str) -> str:
     for name in DESTINATIONS:
         if name in lowered:
             return name.title()
-    return "Paris"
+    return "Santiago"
 
 
 def _pick_origin(user_request: str) -> str:
     lowered = user_request.lower()
-    for city in ["seattle", "new york", "san francisco", "london"]:
+    for city in ["seattle", "new york", "san francisco", "london", "miami"]:
         if city in lowered:
             return city.title()
-    return "Seattle"
+    return "Miami"
 
 
 def _compute_dates() -> tuple[str, str]:
@@ -116,11 +116,11 @@ def _compute_dates() -> tuple[str, str]:
 
 
 def _model_name() -> str:
-    return os.getenv("OPENAI_MODEL", "gpt-4.1")
+    return os.getenv("OPENAI_MODEL", "gpt-4o")
 
 
 def _resolve_server_attributes() -> tuple[str, int]:
-    base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://travelob.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2025-01-01-preview")
     normalized = base_url if "://" in base_url else f"https://{base_url}"
     parsed = urlparse(normalized)
     server_address = parsed.hostname or normalized.replace("https://", "").rstrip("/")
@@ -140,7 +140,7 @@ def _configure_otlp_tracing() -> None:
     provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
 
 
-def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> ChatOpenAI:
+def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> AzureChatOpenAI:
     tags = [f"agent:{agent_name}", "nested-travel-sample"]
     metadata = {
         "agent_name": agent_name,
@@ -150,11 +150,13 @@ def _create_llm(agent_name: str, *, temperature: float, session_id: str) -> Chat
         "ls_model_name": _model_name(),
         "ls_temperature": temperature,
     }
-    return ChatOpenAI(
-        model=_model_name(),
+    return AzureChatOpenAI(
+        deployment_name=_model_name(),
         temperature=temperature,
         tags=tags,
         metadata=metadata,
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", "https://travelob.cognitiveservices.azure.com"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview"),
     )
 
 
@@ -499,7 +501,7 @@ def main() -> None:
 
     session_id = str(uuid4())
     user_request = (
-        "We're planning a long-weekend trip to Paris from Seattle next month. "
+        "We're planning a long-weekend trip to Santiago from Miami next month. "
         "We'd love a boutique hotel, business-class flights and memorable activities."
     )
 
